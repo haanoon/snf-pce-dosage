@@ -4,8 +4,8 @@ Optimal Superplasticizer Dosage Predictor
 Based on Marsh Cone Test Data
 
 Usage:
-    python predict_dosage.py --wc 0.40 --sp PCE
-    python predict_dosage.py --wc 0.35 --sp SNF
+    python predict_dosage.py --wc 0.40 --sp PCE --sf 5
+    python predict_dosage.py --wc 0.35 --sp SNF --sf 0
 """
 
 import argparse
@@ -23,13 +23,14 @@ def load_model():
         print(f"Error: Model files not found. Please train the model first.")
         sys.exit(1)
 
-def predict_optimal_dosage(wc_ratio, sp_type, model, label_encoder):
+def predict_optimal_dosage(wc_ratio, sp_type, sf_pct, model, label_encoder):
     """
     Predict optimal superplasticizer dosage
     
     Args:
         wc_ratio (float): Water-to-cement ratio (e.g., 0.35, 0.40, 0.45)
         sp_type (str): Superplasticizer type ('PCE' or 'SNF')
+        sf_pct (float): Silica Fume percentage (e.g., 0, 5, 10, 15)
         model: Trained ML model
         label_encoder: Fitted label encoder
     
@@ -39,14 +40,17 @@ def predict_optimal_dosage(wc_ratio, sp_type, model, label_encoder):
     # Validate inputs
     if wc_ratio < 0.30 or wc_ratio > 0.50:
         print("⚠️  Warning: W/C ratio outside training range (0.35-0.45)")
-        print("   Predictions may be unreliable for extrapolation.")
+    
+    if sf_pct < 0 or sf_pct > 20:
+        print("⚠️  Warning: Silica Fume % outside typical range (0-15%)")
     
     if sp_type not in ['PCE', 'SNF']:
         raise ValueError("Superplasticizer type must be 'PCE' or 'SNF'")
     
     # Encode and predict
+    # Feature order must match training: [wc_ratio, sp_type, silica_fume]
     sp_encoded = label_encoder.transform([sp_type])[0]
-    X = np.array([[wc_ratio, sp_encoded]])
+    X = np.array([[wc_ratio, sp_encoded, sf_pct]])
     prediction = model.predict(X)[0]
     
     return prediction
@@ -57,8 +61,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python predict_dosage.py --wc 0.40 --sp PCE
-  python predict_dosage.py --wc 0.35 --sp SNF --verbose
+  python predict_dosage.py --wc 0.40 --sp PCE --sf 5
+  python predict_dosage.py --wc 0.35 --sp SNF --sf 10 --verbose
         """
     )
     
@@ -66,6 +70,8 @@ Examples:
                         help='Water-to-cement ratio (e.g., 0.35, 0.40, 0.45)')
     parser.add_argument('--sp', type=str, required=True, choices=['PCE', 'SNF'],
                         help='Superplasticizer type (PCE or SNF)')
+    parser.add_argument('--sf', type=float, default=0.0,
+                        help='Silica Fume percentage (default: 0)')
     parser.add_argument('--verbose', action='store_true',
                         help='Show detailed information')
     
@@ -75,7 +81,7 @@ Examples:
     model, label_encoder = load_model()
     
     # Make prediction
-    optimal_dosage = predict_optimal_dosage(args.wc, args.sp, model, label_encoder)
+    optimal_dosage = predict_optimal_dosage(args.wc, args.sp, args.sf, model, label_encoder)
     
     # Display results
     print("\n" + "=" * 60)
@@ -83,20 +89,14 @@ Examples:
     print("=" * 60)
     print(f"Water/Cement Ratio:     {args.wc}")
     print(f"Superplasticizer Type:  {args.sp}")
+    print(f"Silica Fume:            {args.sf}%")
     print(f"Predicted Optimal Dosage: {optimal_dosage:.3f}%")
     print("=" * 60)
     
     if args.verbose:
         print("\nInterpretation:")
-        print(f"• Use {optimal_dosage:.3f}% {args.sp} by weight of cement")
-        print(f"• This is the saturation point for W/C ratio {args.wc}")
-        print(f"• Adding more than this amount will not improve fluidity")
-        
-        # Provide context
-        if args.sp == 'PCE':
-            print(f"\nNote: PCE typically requires 0.35-0.45% dosage")
-        else:
-            print(f"\nNote: SNF typically requires 0.40-0.50% dosage")
+        print(f"• Use {optimal_dosage:.3f}% {args.sp} by weight of binder (cement + SF)")
+        print(f"• This is the saturation point estimation")
     
     print()
 

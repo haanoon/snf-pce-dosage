@@ -47,12 +47,13 @@ if models_loaded:
         st.subheader("📋 Input Parameters")
         
         # User inputs
-        wc_ratio = st.slider(
+        wc_ratio = st.number_input(
             "Water-to-Cement Ratio (W/C)",
             min_value=0.30,
             max_value=0.50,
             value=0.40,
             step=0.01,
+            format="%.2f",
             help="Typical range: 0.35 - 0.45 for high-strength concrete"
         )
         
@@ -62,20 +63,30 @@ if models_loaded:
             help="PCE = Polycarboxylate Ether, SNF = Sulfonated Naphthalene Formaldehyde"
         )
         
-        # Silica Fume (placeholder for future enhancement)
-        st.info("💡 **Note:** Current model trained for plain cement paste (0% Silica Fume). Future versions will include SF variations.")
+        # Silica Fume
+        sf_pct = st.number_input(
+            "Silica Fume Percentage (%)",
+            min_value=0.0,
+            max_value=20.0,
+            value=0.0,
+            step=1.0,
+            format="%.1f",
+            help="Percentage of Silica Fume replacement (e.g., 0, 5, 10, 15)"
+        )
         
         # Predict button
         if st.button("🔮 Predict Optimal Dosage", type="primary"):
             # Encode and predict
             sp_encoded = le.transform([sp_type])[0]
-            X = np.array([[wc_ratio, sp_encoded]])
+            # Feature order: [wc_ratio, sp_type, silica_fume]
+            X = np.array([[wc_ratio, sp_encoded, sf_pct]])
             prediction = model.predict(X)[0]
             
             # Store in session state
             st.session_state['prediction'] = prediction
             st.session_state['wc_ratio'] = wc_ratio
             st.session_state['sp_type'] = sp_type
+            st.session_state['sf_pct'] = sf_pct
     
     with col2:
         st.subheader("🎯 Prediction Results")
@@ -84,6 +95,7 @@ if models_loaded:
             pred = st.session_state['prediction']
             wc = st.session_state['wc_ratio']
             sp = st.session_state['sp_type']
+            sf = st.session_state.get('sf_pct', 0)
             
             # Display prediction in a nice metric card
             st.metric(
@@ -97,11 +109,15 @@ if models_loaded:
             
             with st.expander("📊 Interpretation & Guidelines", expanded=True):
                 st.markdown(f"""
-                **Recommended Dosage:** `{pred:.3f}%` of cement weight
+                **Mix Details:**
+                - W/C Ratio: `{wc:.2f}`
+                - Silica Fume: `{sf}%`
+                
+                **Recommended Dosage:** `{pred:.3f}%` of binder weight
                 
                 **What this means:**
-                - For 100 kg of cement, use **{pred*1000:.1f} grams** of {sp}
-                - This is the **saturation point** for W/C ratio {wc:.2f}
+                - For 100 kg of binder (cement + SF), use **{pred*1000:.1f} grams** of {sp}
+                - This is the **saturation point** prediction
                 - Adding more than this amount will **not improve** fluidity
                 - May cause segregation or bleeding if exceeded
                 
@@ -148,10 +164,15 @@ if models_loaded:
     with tab1:
         st.markdown("**Flow time vs. Superplasticizer dosage for different W/C ratios**")
         
-        selected_sp = st.radio("Select Superplasticizer", ['PCE', 'SNF'], horizontal=True, key='flow_curve_sp')
+        col_a, col_b = st.columns(2)
+        with col_a:
+            selected_sp = st.radio("Select Superplasticizer", ['PCE', 'SNF'], horizontal=True, key='flow_curve_sp')
+        with col_b:
+            selected_sf_flow = st.select_slider("Select Silica Fume %", options=[0, 5, 10, 15], key='flow_curve_sf')
         
         # Filter data
-        filtered_data = flow_df[flow_df['sp_type'] == selected_sp]
+        filtered_data = flow_df[(flow_df['sp_type'] == selected_sp) & 
+                               (flow_df['silica_fume'] == selected_sf_flow)]
         
         # Create plot
         fig = go.Figure()
@@ -184,27 +205,38 @@ if models_loaded:
                 ))
         
         fig.update_layout(
-            title=f'{selected_sp} Flow Curves (⭐ = Saturation Point)',
+            title={
+                'text': f'{selected_sp} Flow Curves (⭐ = Saturation Point)',
+                'y':0.9,
+                'x':0.5,
+                'xanchor': 'center',
+                'yanchor': 'top'
+            },
             xaxis_title='Dosage (%)',
             yaxis_title='Flow Time (seconds)',
             hovermode='x unified',
-            height=500
+            height=500,
+            margin=dict(l=20, r=20, t=60, b=20)
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        # Center the chart using columns
+        c1, c2, c3 = st.columns([1, 10, 1])
+        with c2:
+            st.plotly_chart(fig, use_container_width=True)
     
     with tab2:
-        st.markdown("**Comparison of saturation dosages between PCE and SNF**")
+        st.markdown("**Comparison of saturation dosages vs Silica Fume content**")
         
         # Saturation comparison
         fig = px.bar(
             saturation_df,
-            x='wc_ratio',
+            x='silica_fume',
             y='optimal_dosage',
             color='sp_type',
             barmode='group',
-            title='Saturation Dosage Comparison',
-            labels={'wc_ratio': 'W/C Ratio', 'optimal_dosage': 'Optimal Dosage (%)', 'sp_type': 'Superplasticizer'},
+            facet_col='wc_ratio',
+            title='Saturation Dosage vs Silica Fume % (by W/C Ratio)',
+            labels={'wc_ratio': 'W/C', 'optimal_dosage': 'Optimal Dosage (%)', 'sp_type': 'SP Type', 'silica_fume': 'Silica Fume %'},
             color_discrete_map={'PCE': '#2E86AB', 'SNF': '#A23B72'},
             text='optimal_dosage'
         )
@@ -262,15 +294,10 @@ if models_loaded:
         **Input Features:**
         1. Water-to-Cement Ratio (0.35 - 0.45)
         2. Superplasticizer Type (PCE or SNF)
+        3. Silica Fume % (0 - 15)   
         
         **Output:**
         - Optimal dosage at saturation point (%)
-        
-        **Limitations:**
-        - Trained on plain cement paste (no Silica Fume)
-        - Best for W/C ratios between 0.35 and 0.45
-        - Results may vary with different cement types
-        - Field testing recommended for final validation
         """)
 
 else:
