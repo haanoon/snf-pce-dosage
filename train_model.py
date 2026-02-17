@@ -12,10 +12,10 @@ def train_model():
 
     # Load data
     try:
-        data = pd.read_csv('saturation_points.csv')
-        print(f"✅ Loaded {len(data)} saturation points from saturation_points.csv")
+        data = pd.read_csv('05_oversampled_hybrid_RECOMMENDED (2).csv')
+        print(f"✅ Loaded {len(data)} saturation points from 05_oversampled_hybrid_RECOMMENDED (2).csv")
     except FileNotFoundError:
-        print("❌ Error: saturation_points.csv not found!")
+        print("❌ Error: Dataset not found!")
         return
 
     # Prepare features and target
@@ -27,7 +27,14 @@ def train_model():
     le = LabelEncoder()
     X['sp_type'] = le.fit_transform(X['sp_type'])
     
-    # Initialize model
+    # Scale features (Critical for ANN - Commented out for GB)
+    # from sklearn.preprocessing import StandardScaler
+    # scaler = StandardScaler()
+    # X_scaled = scaler.fit_transform(X)
+    
+    # Initialize model (Gradient Boosting)
+    # from sklearn.neural_network import MLPRegressor
+    # model = MLPRegressor(hidden_layer_sizes=(64, 32), activation='relu', solver='adam', max_iter=1000, random_state=42)
     model = GradientBoostingRegressor(random_state=42)
 
     # Validate with LOOCV
@@ -35,14 +42,19 @@ def train_model():
     loo = LeaveOneOut()
     y_true, y_pred = [], []
 
-    for train_index, test_index in loo.split(X):
-        X_train, X_test = X.iloc[train_index], X.iloc[test_index]
-        y_train, y_test = y.iloc[train_index], y.iloc[test_index]
+    # Convert X to numpy to avoid indexing issues
+    # X_np = X_scaled 
+    X_np = X.values # Use original features for GB
+    y_np = y.values
+
+    for train_index, test_index in loo.split(X_np):
+        X_train, X_test = X_np[train_index], X_np[test_index]
+        y_train, y_test = y_np[train_index], y_np[test_index]
         
         model.fit(X_train, y_train)
         pred = model.predict(X_test)[0]
         
-        y_true.append(y_test.values[0])
+        y_true.append(y_test[0])
         y_pred.append(pred)
         
     # Calculate metrics
@@ -59,7 +71,8 @@ def train_model():
 
     # Train final model on full dataset
     print("\n💾 Training final model on full dataset...")
-    model.fit(X, y)
+    # model.fit(X_scaled, y)
+    model.fit(X, y) # Fit on original X
 
     # Save artifacts
     joblib.dump(model, 'optimal_dosage_predictor.pkl')
@@ -67,6 +80,8 @@ def train_model():
     
     print("✅ Model saved to 'optimal_dosage_predictor.pkl'")
     print("✅ Encoder saved to 'label_encoder.pkl'")
+    # joblib.dump(scaler, 'scaler.pkl')
+    # print("✅ Scaler saved to 'scaler.pkl'")
     print("\n🎉 Training complete!")
 
 if __name__ == "__main__":

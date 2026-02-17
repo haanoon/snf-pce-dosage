@@ -18,12 +18,13 @@ def load_models():
     """Load trained model and encoders"""
     model = joblib.load('optimal_dosage_predictor.pkl')
     label_encoder = joblib.load('label_encoder.pkl')
-    saturation_data = pd.read_csv('saturation_points.csv')
+    scaler = joblib.load('scaler.pkl')
+    saturation_data = pd.read_csv('05_oversampled_hybrid_RECOMMENDED (2).csv')
     flow_data = pd.read_csv('processed_flow_data.csv')
-    return model, label_encoder, saturation_data, flow_data
+    return model, label_encoder, scaler, saturation_data, flow_data
 
 try:
-    model, le, saturation_df, flow_df = load_models()
+    model, le, scaler, saturation_df, flow_df = load_models()
     models_loaded = True
 except Exception as e:
     models_loaded = False
@@ -89,7 +90,8 @@ if models_loaded:
             sp_encoded = le.transform([sp_type])[0]
             # Feature order: [wc_ratio, sp_type, silica_fume]
             X = np.array([[wc_ratio, sp_encoded, sf_pct]])
-            prediction = model.predict(X)[0]
+            X_scaled = scaler.transform(X)
+            prediction = model.predict(X_scaled)[0]
             
             # Store in session state
             st.session_state['prediction'] = prediction
@@ -296,9 +298,10 @@ if models_loaded:
     with st.expander("ℹ️ About the Model"):
         st.markdown("""
         **Model Details:**
-        - **Algorithm:** Gradient Boosting Regressor
-        - **Training Data:** 6 saturation points (3 W/C ratios × 2 SP types)
-        - **Performance:** MAE = 0.025%, RMSE = 0.035%
+        **Model Details:**
+        - **Algorithm:** Artificial Neural Network (MLP Regressor)
+        - **Training Data:** 108 saturation points (Oversampled Dataset)
+        - **Performance:** MAE = 0.0379%, RMSE = 0.0522%
         - **Validation:** Leave-One-Out Cross-Validation
         
         **Input Features:**
